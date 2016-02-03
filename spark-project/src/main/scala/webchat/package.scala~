@@ -1,0 +1,17 @@
+package webchat
+
+import org.apache.spark.SparkContext
+import org.apache.spark.SparkContext._
+import org.apache.spark.SparkConf
+
+def classify(wordCounts:(String,Int), goodWords:Array[String], badWords:Array[String]) : (String, Int, String) = {
+		if(goodWords.contains(wordCounts._1)) {
+			return (wordCounts._1,wordCounts._2,"g")
+		}
+		else if(badWords.contains(wordCounts._1)) {
+			return (wordCounts._1,wordCounts._2,"b")
+		}
+		else {
+			return (wordCounts._1,wordCounts._2,"n")
+		}
+	}

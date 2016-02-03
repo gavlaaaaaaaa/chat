@@ -1,0 +1,178 @@
+package scala.streaming
+
+import org.apache.spark.streaming.{Seconds, StreamingContext}
+import org.apache.spark.SparkContext._
+import org.apache.spark.streaming.twitter._
+import org.apache.spark.SparkConf
+import org.apache.spark.HashPartitioner
+
+import org.apache.spark.streaming.dstream.TransformedDStream
+
+import org.apache.log4j.Logger
+import org.apache.log4j.Level
+import org.apache.spark.storage.StorageLevel
+
+import java.net._
+import java.io._
+import scala.io._
+
+
+import scala.io.Source
+
+
+
+object TopWords {
+	def main(args: Array[String]) {
+		if (args.length < 4) {                      //   0               1                2                    3           4     5
+			System.err.println("Usage: TopWords <consumer key> <consumer secret> <access token> <access token secret> <IP> <Port>")
+			System.exit(1)
+		}
+
+		Logger.getLogger("org").setLevel(Level.OFF)
+		Logger.getLogger("akka").setLevel(Level.OFF)
+
+		val updateFunc = (values: Seq[Int], state: Option[Int]) => {
+			val currentCount = values.sum
+			val previousCount = state.getOrElse(0)
+
+			Some(currentCount + previousCount)
+		}
+
+		val newUpdateFunc = (iterator: Iterator[(String, Seq[Int], Option[Int])]) => {
+			iterator.flatMap(t => updateFunc(t._2, t._3).map(s => (t._1, s)))
+		}
+
+
+		val ip = args(4)
+		val port = args(5)
+
+
+		val source : InputStream = getClass.getResourceAsStream("/StopWords.txt")
+
+
+		val Array(consumerKey, consumerSecret, accessToken, accessTokenSecret) = args.take(4)
+
+		val tokens = args.take(4)
+		val filters = args.drop(6)
+
+
+println("Searching for \n\n\n" + filters.deep.mkString("\n"))
+
+		System.setProperty("twitter4j.oauth.consumerKey", consumerKey)
+		System.setProperty("twitter4j.oauth.consumerSecret", consumerSecret)
+		System.setProperty("twitter4j.oauth.accessToken", accessToken)
+		System.setProperty("twitter4j.oauth.accessTokenSecret", accessTokenSecret)
+
+
+		val sparkConf = new SparkConf().setAppName("Top Words")
+		val ssc = new StreamingContext(sparkConf, Seconds(10))
+
+		//ssc.checkpoint(".")
+
+
+		//val s = new Socket(InetAddress.getByName("localhost"), 9999)
+
+		
+
+
+
+
+
+	object auth {
+		val config = new twitter4j.conf.ConfigurationBuilder()
+
+		.setOAuthConsumerKey(consumerKey)
+		.setOAuthConsumerSecret(consumerSecret)
+		.setOAuthAccessToken(accessToken)
+		.setOAuthAccessTokenSecret(accessTokenSecret)
+		.setIncludeMyRetweetEnabled(false)
+		.setStreamBaseURL("https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=Capgemini&count=20&exclude_replies=true&include_rts=true")
+		.setSiteStreamBaseURL("https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=Capgemini&count=20&exclude_replies=true&include_rts=true")
+		.setRestBaseURL("https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=Capgemini&count=20&exclude_replies=true&include_rts=true")
+
+		.build
+	}
+
+	val twitter_auth = new twitter4j.TwitterFactory(auth.config)
+	val a = new twitter4j.auth.OAuthAuthorization(auth.config)
+
+	val atwitter : Option[twitter4j.auth.Authorization] =  Some(twitter_auth.getInstance(a).getAuthorization())
+
+
+
+	val stream = TwitterUtils.createStream(ssc, atwitter, filters, StorageLevel.MEMORY_ONLY)
+
+
+
+		//val stopWords = ssc.sparkContext.textFile("/home/training/Documents/Tech_Challenge/Spark_Attack/spark-project/src/resources/StopWords.txt").collect()
+		//val stopWords = ssc.sparkContext.textFile("StopWords.txt").collect()
+		//val stopWords = ssc.sparkContext.textFile(words).collect()
+
+
+		stream.persist(StorageLevel.MEMORY_ONLY)
+
+
+		//Remove any tweets with empty text tweets, that are sensitive tweets and don't specify english as lang
+		val nonNullStream = stream.filter(tweet =>
+			tweet.getText().trim().length() > 0 &&
+			! tweet.isPossiblySensitive() &&
+			tweet.toString().contains("lang=\'en\'")
+		);
+
+
+		nonNullStream.foreachRDD(rdd=>{
+		//	val s = new Socket(InetAddress.getByName(ip), Integer.parseInt(port))
+		//	lazy val in = new BufferedSource(s.getInputStream()).getLines()
+		//	val out = new PrintStream(s.getOutputStream())
+		//	out.println(rdd.collect().deep.mkString(" - ") + "\n")
+		//	out.flush()
+		//	s.close()
+
+			print(rdd.collect().deep.mkString(" - ") + "\n")
+		})
+
+		
+
+
+/*
+
+		val tweetText = nonNullStream.flatMap(line =>line.getText().toLowerCase().trim().replaceAll("[^a-z ]","").split("[ ]"))
+
+		val filt = tweetText.filter(word=>word.length()>0 && !word.equals("rt") && !word.matches("^http.*") && !filters.contains(word))
+
+		//val filt2  = filt.filter(!stopWords.contains(_))
+
+
+		val initialRDD = ssc.sparkContext.parallelize(Array[(String,Int)]()) 
+	
+		val wordDstream = filt.map(x => (x, 1))
+
+		val stateDstream = wordDstream.updateStateByKey[Int](newUpdateFunc, new HashPartitioner (ssc.sparkContext.defaultParallelism), true, initialRDD)
+
+		
+		val sortedreqs = stateDstream.transform(rdd => rdd.sortByKey(false))
+
+
+		sortedreqs.foreachRDD(rdd=>{
+			print("\n\n{\"name\": \"flare\",\"children\": [")
+        		var count = 1
+			//rdd.takeOrdered(10)(Ordering[Int].reverse.on(_._2)).foreach(println)
+			rdd.takeOrdered(10)(Ordering[Int].reverse.on(_._2)).foreach(item=>{
+				print("{\"name\": \"" + item._1 +"\",\"size\": " + item._2 + "}")
+				if (count < 10){
+					count=count+1
+					print(",")
+				}
+			})
+
+			print("]}\n\n")
+		})
+*/
+		ssc.start()
+		ssc.awaitTerminationOrTimeout(120000)
+
+
+		print("And we're done")
+	}
+}
+

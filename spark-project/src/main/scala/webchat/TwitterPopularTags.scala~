@@ -1,0 +1,60 @@
+package org.apache.spark.examples.streaming
+
+import org.apache.spark.streaming.{Seconds, StreamingContext}
+import org.apache.spark.SparkContext._
+import org.apache.spark.streaming.twitter._
+import org.apache.spark.SparkConf
+
+
+object TopWords {
+	def main(args: Array[String]) {
+		if (args.length < 5) {
+			System.err.println("Usage: TwitterPopularTags <consumer key> <consumer secret> <access token> <access token secret> <search-term>")
+			System.exit(1)
+		}
+
+
+		val searchTerm = args(4)
+		val Array(consumerKey, consumerSecret, accessToken, accessTokenSecret) = args.take(4)
+
+		val tokens = args.takeRight(args.length - 4)
+
+
+		System.setProperty("twitter4j.oauth.consumerKey", consumerKey)
+		System.setProperty("twitter4j.oauth.consumerSecret", consumerSecret)
+		System.setProperty("twitter4j.oauth.accessToken", accessToken)
+		System.setProperty("twitter4j.oauth.accessTokenSecret", accessTokenSecret)
+
+
+		val sparkConf = new SparkConf().setAppName("Top Words")
+		val ssc = new StreamingContext(sparkConf, Seconds(10))
+		val stream = TwitterUtils.createStream(ssc, None, tokens)
+
+
+		//Remove any tweets with empty text tweets, that are sensitive tweets and don't specify english as lang
+		val nonNullStream = stream.filter(tweet =>
+			tweet.getText().trim().length() > 0 &&
+			! tweet.isPossiblySensitive() &&
+			tweet.toString().contains("lang=\'en\'") &&
+			tweet.toString().contains(searchTerm)
+		);
+
+
+		//Lower case string and remove any non-alpha characters and search word, split by space
+		val tweetText = nonNullStream.flatMap(line => line.getText().toLowerCase().replaceAll("[^a-z]","").replaceAll(searchTerm,"").split("\\s"))
+
+
+		//Add a count to all words
+		val words = tweetText.map(x => (x, 1)).reduceByKey(_ + _)
+
+
+		//Print top 10 words occuring
+		words.take(10).foreachRDD(rdd => {
+			rdd.foreach{msg => println("line : " + msg + "\n" )}
+		})
+
+		ssc.start()
+		ssc.awaitTermination()
+	}
+}
+

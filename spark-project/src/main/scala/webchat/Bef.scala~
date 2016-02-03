@@ -1,0 +1,168 @@
+package scala.streaming
+
+import org.apache.spark.streaming.{Seconds, StreamingContext}
+import org.apache.spark.SparkContext._
+import org.apache.spark.streaming.twitter._
+import org.apache.spark.SparkConf
+import org.apache.spark.HashPartitioner
+
+import org.apache.spark.streaming.dstream.TransformedDStream
+
+import org.apache.log4j.Logger
+import org.apache.log4j.Level
+import org.apache.spark.storage.StorageLevel
+
+import java.net._
+import java.io._
+import scala.io._
+
+
+import scala.io.Source
+
+
+
+object Bef {
+	def main(args: Array[String]) {
+		if (args.length < 6) {                      //   0               1                2                    3           4     5
+			System.err.println("Usage: TopWords <consumer key> <consumer secret> <access token> <access token secret> <IP> <Port>")
+			System.exit(1)
+		}
+
+		Logger.getLogger("org").setLevel(Level.OFF)
+		Logger.getLogger("akka").setLevel(Level.OFF)
+
+		val updateFunc = (values: Seq[Int], state: Option[Int]) => {
+			val currentCount = values.sum
+			val previousCount = state.getOrElse(0)
+
+			Some(currentCount + previousCount)
+		}
+
+		val newUpdateFunc = (iterator: Iterator[(String, Seq[Int], Option[Int])]) => {
+			iterator.flatMap(t => updateFunc(t._2, t._3).map(s => (t._1, s)))
+		}
+
+
+		//val classifyWords: String=>(String,String,Int)={a=>if(a=="good")(a,"g",1) else if(a=="bad") (a,"b",1) else (a,"n",1)}
+
+		//val classifyWords2: ((String,Int))=>(String,Int,String)={case(a,b)=>if(a=="good")(a,b,"g") else if(a=="bad") (a,b,"b") else (a,b,"n")}
+
+		val ip = args(4)
+		val port = args(5)
+
+
+		val Array(consumerKey, consumerSecret, accessToken, accessTokenSecret) = args.take(4)
+		val tokens = args.take(4)
+		val filters = args.drop(6)
+
+
+		val source : InputStream = getClass.getResourceAsStream("/StopWords.txt")
+		val stopWords = scala.io.Source.fromInputStream(source).mkString.split("\n")
+		
+		val sourcePos : InputStream = getClass.getResourceAsStream("/PositiveWords.txt")
+		val positiveWords = scala.io.Source.fromInputStream(sourcePos).mkString.split("\n")
+
+		val sourceNeg : InputStream = getClass.getResourceAsStream("/NegativeWords.txt")
+		val negativeWords = scala.io.Source.fromInputStream(sourceNeg).mkString.split("\n")		
+
+
+
+		System.setProperty("twitter4j.oauth.consumerKey", consumerKey)
+		System.setProperty("twitter4j.oauth.consumerSecret", consumerSecret)
+		System.setProperty("twitter4j.oauth.accessToken", accessToken)
+		System.setProperty("twitter4j.oauth.accessTokenSecret", accessTokenSecret)
+
+
+		val sparkConf = new SparkConf().setAppName("Top Words")
+		val ssc = new StreamingContext(sparkConf, Seconds(10))
+		ssc.checkpoint(".")
+
+
+		object auth {
+			val config = new twitter4j.conf.ConfigurationBuilder()
+
+			.setOAuthConsumerKey(consumerKey)
+			.setOAuthConsumerSecret(consumerSecret)
+			.setOAuthAccessToken(accessToken)
+			.setOAuthAccessTokenSecret(accessTokenSecret)
+			.setIncludeMyRetweetEnabled(false)
+			.build
+		}
+
+		val twitter_auth = new twitter4j.TwitterFactory(auth.config)
+		val a = new twitter4j.auth.OAuthAuthorization(auth.config)
+
+		val atwitter : Option[twitter4j.auth.Authorization] =  Some(twitter_auth.getInstance(a).getAuthorization())
+		val stream = TwitterUtils.createStream(ssc, atwitter, filters, StorageLevel.MEMORY_ONLY)
+
+		stream.persist(StorageLevel.MEMORY_ONLY)
+
+
+		//Remove any tweets with empty text tweets, that are sensitive tweets and don't specify english as lang
+		val nonNullStream = stream.filter(tweet =>
+			tweet.getText().trim().length() > 0 &&
+			! tweet.isPossiblySensitive() &&
+			tweet.toString().contains("lang=\'en\'")
+		);
+
+
+		//Alpha characters only
+		val alphaOnly = nonNullStream.flatMap(line =>line.getText().toLowerCase().trim().replaceAll("[^a-z ]","").split("[ ]"))
+
+		//Remove any empty words, retweets, http refs, filter words
+		val filteredWords = alphaOnly.filter(word=>word.length()>0 && !word.equals("rt") && !word.matches("^http.*") && !filters.contains(word))
+
+		//Remove stop words
+		val removedStopWords  = filteredWords.filter(!stopWords.contains(_))
+
+		//Distinct words - count each word per tweet once
+		val distinctWords = removedStopWords.distinct
+
+		//Count words
+		val wordDstream = removedStopWords.map(x => (x, 1))
+
+
+
+		val initialRDD = ssc.sparkContext.parallelize(Array[(String,Int)]()) 
+		val stateDstream = wordDstream.updateStateByKey[Int](newUpdateFunc, new HashPartitioner (ssc.sparkContext.defaultParallelism), true, initialRDD)
+		val sortedreqs = stateDstream.transform(rdd => rdd.sortByKey(false))
+
+
+
+		
+
+
+		sortedreqs.foreachRDD(rdd=>{
+			val s = new Socket(InetAddress.getByName(ip), Integer.parseInt(port))
+			//lazy val in = new BufferedSource(s.getInputStream()).getLines()
+			val out = new PrintStream(s.getOutputStream())
+
+			var count = 1
+			val rdd_arr = rdd.takeOrdered(10)(Ordering[Int].reverse.on(_._2)) //.collect()
+
+			var jsonOut = "{\"name\": \"flare\",\"children\": ["
+
+			rdd_arr.foreach(item =>{
+				jsonOut = jsonOut +  "{\"name\": \"" + item._1 +"\",\"size\": " + item._2 + "}"
+				if (count < 10){
+					count=count+1
+					jsonOut = jsonOut + ","
+				}
+			})
+
+			jsonOut = jsonOut + "]}\n"
+			
+			out.println(jsonOut)
+			out.flush()
+			s.close()
+		})
+
+
+
+		ssc.start()
+		ssc.awaitTerminationOrTimeout(120000)
+
+		
+	}
+}
+

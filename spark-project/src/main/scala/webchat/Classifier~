@@ -1,0 +1,46 @@
+package scala.streaming
+
+import org.apache.spark.streaming.{Seconds, StreamingContext}
+import org.apache.spark.SparkContext._
+import org.apache.spark.streaming.twitter._
+import org.apache.spark.SparkConf
+import org.apache.spark.HashPartitioner
+
+import org.apache.spark.streaming.dstream.TransformedDStream
+
+import org.apache.log4j.Logger
+import org.apache.log4j.Level
+import org.apache.spark.storage.StorageLevel
+
+import java.net._
+import java.io._
+import scala.io._
+
+import scala.io.Source
+
+
+
+
+public class Classifier
+{
+	val source : InputStream = getClass.getResourceAsStream("/StopWords.txt")
+	val stopWords = scala.io.Source.fromInputStream(source).mkString.split("\n")
+	
+	val sourcePos : InputStream = getClass.getResourceAsStream("/PositiveWords.txt")
+	val positiveWords = scala.io.Source.fromInputStream(sourcePos).mkString.split("\n")
+
+	val sourceNeg : InputStream = getClass.getResourceAsStream("/NegativeWords.txt")
+	val negativeWords = scala.io.Source.fromInputStream(sourceNeg).mkString.split("\n")		
+
+	val sourceHappyEmoji : InputStream = getClass.getResourceAsStream("/HappyEmoticons.txt")
+	val happyEmojiWords = scala.io.Source.fromInputStream(sourceHappyEmoji).mkString.split("\n")	
+
+	val sourceSadEmoji : InputStream = getClass.getResourceAsStream("/SadEmoticons.txt")
+	val sadEmojiWords = scala.io.Source.fromInputStream(sourceSadEmoji).mkString.split("\n")	
+
+	val sourceProf : InputStream = getClass.getResourceAsStream("/Profanity.txt")
+	val profanityWords = scala.io.Source.fromInputStream(sourceProf).mkString.split("\n")
+	
+
+
+}
