@@ -27,28 +27,7 @@ object WebChat {
     val file = args(0)
     val colList = sc.textFile(file).map(line => line.toLowerCase().split('|'))
     
-    /*
-    //get comment out of the 13th element of the array
-    val groupedComments = colList.map(comments => comments(13).
-                                                replaceAll(",","")). //remove commas out of comment
-                                                map(words => words.split("\\W"). //split comment into words
-                                                map(word => (word,1))) //map each word into tuple with count of 1
-  
-    // reduce mapped comments above and classify
-    val count = groupedComments.map(a => a.groupBy(b => b._1). // group by first element of tuple (word)
-                                            map{case (key,tuples) => (key, tuples. //break out the set of feedback words per chat item
-                                                                        map( a => a._2). //map to grab the count
-                                                                        sum ) //add them al together
-                                                }.
-                                                map(x => webchat.classify(x,positiveWords,negativeWords))) // call classify to obtain a classifcation for each word
-    */
 
-    /*
-    val groupedComments = colList.map(comments => (comments, comments(13).
-                                                replaceAll(",",""))). //remove commas out of comment
-                                                map{case (row,words) => (row,words.split("\\W"). //split comment into words
-                                                map(word => (word,1)))} //map each word into tuple with count of 1
-    */
     val groupedComments = colList.map(comments => (comments, webchat.replaceUnwantedWords(
                                                         webchat.standardiseString(comments(13))))). //remove commas out of comment
                                                 map{case (row,words) => (row,words.split("\\W"). //split comment into words
@@ -62,22 +41,14 @@ object WebChat {
                                                 }.
                                                 map(words => webchat.classify(words,positiveWords,negativeWords)))}
 
-    val output = count.map{case (row, counts) => (println(row.toList),println(counts.toList))}.collect()
+    // output can be printed to show output before conversion to JSON
+    //val output = count.map{case (row, counts) => (println(row.toList),println(counts.toList))}.collect()
+    val date = System.currentTimeMillis / 1000
+    println(date)
+    val outfile = "/home/training/Documents/output/jsonout"+date
 
-    val outfile = "/home/training/Documents/output/test"
-
-    //count.saveAsTextFile(outfile)
-    count.foreach(println)
     val jsonOut = webchat.printMessageClassifications(count)
 
-    sc.parallelize(List(jsonOut)).saveAsTextFile("/home/training/Documents/output/jsonout")
+    sc.parallelize(List(jsonOut)).saveAsTextFile(outfile)
   }
 }
-
-// THE PLAY ZONE!!!!!!
-/*
-val groupedComments = colList.map(comments => (comments, webchat.replaceUnwantedWords(
-                                                        webchat.standardiseString(comments(13))))). //remove commas out of comment
-                                                map{case (row,words) => (row,words.split("\\W"). //split comment into words
-                                                map(word => (word,1)))} //map each word into tuple with count of 1
-*/
